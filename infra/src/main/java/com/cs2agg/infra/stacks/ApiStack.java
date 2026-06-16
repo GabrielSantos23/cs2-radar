@@ -68,11 +68,6 @@ public class ApiStack extends Stack {
 
         HttpApi httpApi = HttpApi.Builder.create(this, "HttpApi")
                 .apiName("CS2MatchAggregatorApi")
-                .corsPreflight(CorsPreflightOptions.builder()
-                        .allowOrigins(List.of("*"))
-                        .allowMethods(List.of(CorsHttpMethod.GET))
-                        .allowHeaders(List.of("Content-Type"))
-                        .build())
                 .build();
 
         HttpRouteIntegration integration = new HttpRouteIntegration("ApiLambdaIntegration") {
