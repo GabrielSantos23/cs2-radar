@@ -1,0 +1,24 @@
+# Maven
+target/
+dependency-reduced-pom.xml
+*.jar
+*.war
+*.ear
+
+# IDEs
+.idea/
+*.iml
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.vscode/
+
+# LocalStack & Temporary Files
+.localstack/
+response.json
+
+# OS files
+.DS_Store
+Thumbs.db

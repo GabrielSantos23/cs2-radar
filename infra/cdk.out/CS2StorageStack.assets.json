@@ -1,0 +1,19 @@
+{
+  "version": "36.0.0",
+  "files": {
+    "5830272946895ab0f4b64e4f40d97cb6cfce44016fd4701268eab4ed15beb9de": {
+      "source": {
+        "path": "CS2StorageStack.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "current_account-current_region": {
+          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}",
+          "objectKey": "5830272946895ab0f4b64e4f40d97cb6cfce44016fd4701268eab4ed15beb9de.json",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
