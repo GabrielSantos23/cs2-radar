@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +22,8 @@ public record Match(
     @JsonProperty("serie_name") String serieName,
     @JsonProperty("team1") Team team1,
     @JsonProperty("team2") Team team2,
-    @JsonProperty("odds") List<Odds> odds
+    @JsonProperty("odds") List<Odds> odds,
+    @JsonIgnore String tournamentTier
 ) {
 
     public static class MatchDeserializer extends JsonDeserializer<Match> {
@@ -33,11 +35,32 @@ public record Match(
             String name = node.has("name") && !node.get("name").isNull() ? node.get("name").asText() : "";
             String beginAt = node.has("begin_at") && !node.get("begin_at").isNull() ? node.get("begin_at").asText() : "";
             
+            String leagueName = "";
+            if (node.has("league") && !node.get("league").isNull()) {
+                JsonNode league = node.get("league");
+                if (league.has("name") && !league.get("name").isNull()) {
+                    leagueName = league.get("name").asText();
+                }
+            }
+
             String tournamentName = "";
+            String tournamentTier = "";
             if (node.has("tournament") && !node.get("tournament").isNull()) {
                 JsonNode tournament = node.get("tournament");
                 if (tournament.has("name") && !tournament.get("name").isNull()) {
                     tournamentName = tournament.get("name").asText();
+                }
+                if (tournament.has("tier") && !tournament.get("tier").isNull()) {
+                    tournamentTier = tournament.get("tier").asText();
+                }
+            }
+            
+            String fullChampionshipName = tournamentName;
+            if (!leagueName.isEmpty()) {
+                if (tournamentName.isEmpty()) {
+                    fullChampionshipName = leagueName;
+                } else {
+                    fullChampionshipName = leagueName + " - " + tournamentName;
                 }
             }
             
@@ -62,7 +85,6 @@ public record Match(
             }
             
             List<Odds> oddsList = new ArrayList<>();
-            // Check if PandaScore or other custom bookmaker odds are nested, or if we map them directly
             if (node.has("odds") && !node.get("odds").isNull() && node.get("odds").isArray()) {
                 for (JsonNode oddNode : node.get("odds")) {
                     String bookmaker = oddNode.has("bookmaker") && !oddNode.get("bookmaker").isNull() ? oddNode.get("bookmaker").asText() : "";
@@ -72,7 +94,7 @@ public record Match(
                 }
             }
             
-            return new Match(id, name, beginAt, tournamentName, serieName, team1, team2, oddsList);
+            return new Match(id, name, beginAt, fullChampionshipName, serieName, team1, team2, oddsList, tournamentTier);
         }
         
         private Team parseTeam(JsonNode opponentNode) {

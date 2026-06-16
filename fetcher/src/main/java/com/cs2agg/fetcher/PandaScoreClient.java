@@ -27,7 +27,6 @@ public class PandaScoreClient {
     public List<Match> fetchUpcomingMatches() {
         String url = "https://api.pandascore.co/csgo/matches/upcoming" +
                 "?filter[status]=not_started" +
-                "&filter[tournament_tier]=s,a" +
                 "&sort=begin_at" +
                 "&per_page=50" +
                 "&token=" + apiKey;
@@ -45,7 +44,12 @@ public class PandaScoreClient {
                 throw new PandaScoreException("PandaScore API response body was null");
             }
             String bodyString = response.body().string();
-            return mapper.readValue(bodyString, new TypeReference<List<Match>>() {});
+            List<Match> allMatches = mapper.readValue(bodyString, new TypeReference<List<Match>>() {});
+            
+            return allMatches.stream()
+                    .filter(m -> m.tournamentTier() != null && 
+                                 ("s".equalsIgnoreCase(m.tournamentTier()) || "a".equalsIgnoreCase(m.tournamentTier())))
+                    .toList();
         } catch (IOException e) {
             throw new PandaScoreException("Failed to fetch matches from PandaScore API", e);
         }
