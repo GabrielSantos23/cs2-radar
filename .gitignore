@@ -22,3 +22,6 @@ response.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local test web client
+web-client/
