@@ -1,9 +1,11 @@
 package com.cs2agg.api;
 
 import com.cs2agg.api.model.MatchEntity;
+import com.cs2agg.api.model.BracketEntity;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
@@ -13,6 +15,7 @@ import java.util.stream.Collectors;
 
 public class DynamoDbReader {
     private final DynamoDbTable<MatchEntity> table;
+    private final DynamoDbTable<BracketEntity> bracketsTable;
 
     public DynamoDbReader() {
         String regionStr = System.getenv("AWS_REGION");
@@ -35,6 +38,7 @@ public class DynamoDbReader {
         }
         
         this.table = enhancedClient.table(tableName, TableSchema.fromBean(MatchEntity.class));
+        this.bracketsTable = enhancedClient.table("cs2-brackets", TableSchema.fromBean(BracketEntity.class));
     }
 
     public List<MatchEntity> getUpcomingMatches() {
@@ -59,5 +63,11 @@ public class DynamoDbReader {
                 .filter(m -> (m.getTeam1() != null && teamId.equals(m.getTeam1().getId())) || 
                              (m.getTeam2() != null && teamId.equals(m.getTeam2().getId())))
                 .collect(Collectors.toList());
+    }
+
+    public List<BracketEntity> getBracketsByTournament(String tournamentId) {
+        return bracketsTable.query(QueryConditional.keyEqualTo(
+                k -> k.partitionValue(tournamentId)
+        )).items().stream().collect(Collectors.toList());
     }
 }

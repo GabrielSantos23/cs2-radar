@@ -10,5 +10,6 @@ public record MatchResponse(
     String serieName,
     TeamResponse team1,
     TeamResponse team2,
-    List<OddsResponse> odds
+    List<OddsResponse> odds,
+    String tournamentId
 ) {}

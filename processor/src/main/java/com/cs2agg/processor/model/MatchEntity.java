@@ -17,6 +17,7 @@ public class MatchEntity {
     private Team team2;
     private List<Odds> odds;
     private Long ttl;
+    private String pandascoreTournamentId;
 
     public MatchEntity() {}
 
@@ -30,6 +31,7 @@ public class MatchEntity {
         this.team1 = event.team1();
         this.team2 = event.team2();
         this.odds = event.odds();
+        this.pandascoreTournamentId = event.tournamentId();
         // Default TTL: 7 days from now (in seconds)
         this.ttl = (System.currentTimeMillis() / 1000L) + (7 * 24 * 60 * 60);
     }
@@ -108,7 +110,15 @@ public class MatchEntity {
         this.ttl = ttl;
     }
 
+    public String getPandascoreTournamentId() {
+        return pandascoreTournamentId;
+    }
+
+    public void setPandascoreTournamentId(String pandascoreTournamentId) {
+        this.pandascoreTournamentId = pandascoreTournamentId;
+    }
+
     public MatchEvent toEvent() {
-        return new MatchEvent(matchId, name, beginAt, tournamentId, serieName, team1, team2, odds);
+        return new MatchEvent(matchId, name, beginAt, tournamentId, serieName, team1, team2, odds, pandascoreTournamentId);
     }
 }

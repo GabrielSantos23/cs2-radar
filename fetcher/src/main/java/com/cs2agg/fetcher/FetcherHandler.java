@@ -25,6 +25,27 @@ public class FetcherHandler implements RequestHandler<ScheduledEvent, Void> {
             
             publisher.publish(matches);
             System.out.println("Published matches successfully to SQS.");
+
+            // Passo 1: Extrair torneios ativos e coletar brackets
+            List<String> tournamentIds = matches.stream()
+                    .map(Match::tournamentId)
+                    .filter(id -> id != null && !id.trim().isEmpty())
+                    .distinct()
+                    .toList();
+
+            System.out.println("Found " + tournamentIds.size() + " unique active tournaments. Fetching brackets...");
+            for (String tournamentId : tournamentIds) {
+                try {
+                    List<com.cs2agg.fetcher.model.Bracket> brackets = client.fetchBrackets(tournamentId);
+                    if (!brackets.isEmpty()) {
+                        publisher.publishBracket(tournamentId, brackets);
+                    } else {
+                        System.out.println("No brackets found for tournament: " + tournamentId);
+                    }
+                } catch (Exception e) {
+                    System.err.println("Failed to fetch/publish brackets for tournament ID " + tournamentId + ": " + e.getMessage());
+                }
+            }
         } catch (Exception e) {
             System.err.println("Error in FetcherHandler: " + e.getMessage());
             e.printStackTrace();

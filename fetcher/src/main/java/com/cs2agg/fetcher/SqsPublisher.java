@@ -1,8 +1,11 @@
 package com.cs2agg.fetcher;
 
 import com.cs2agg.fetcher.model.Match;
+import com.cs2agg.fetcher.model.Bracket;
+import com.cs2agg.fetcher.model.BracketMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageBatchRequestEntry;
 import software.amazon.awssdk.services.sqs.model.SendMessageBatchResponse;
@@ -70,6 +73,23 @@ public class SqsPublisher {
             response.failed().forEach(err -> 
                 System.err.println("Error details - ID: " + err.id() + ", Code: " + err.code() + ", Message: " + err.message())
             );
+        }
+    }
+
+    public void publishBracket(String tournamentId, List<Bracket> brackets) {
+        if (brackets == null || brackets.isEmpty()) {
+            return;
+        }
+        try {
+            BracketMessage msg = new BracketMessage("bracket", tournamentId, brackets);
+            String jsonMessage = mapper.writeValueAsString(msg);
+            sqsClient.sendMessage(SendMessageRequest.builder()
+                    .queueUrl(queueUrl)
+                    .messageBody(jsonMessage)
+                    .build());
+            System.out.println("Published bracket for tournament ID " + tournamentId + " successfully to SQS.");
+        } catch (Exception e) {
+            System.err.println("Failed to serialize or publish bracket for tournament ID " + tournamentId + ": " + e.getMessage());
         }
     }
 }

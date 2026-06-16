@@ -25,3 +25,8 @@ Thumbs.db
 
 # Local test web client
 web-client/
+frontend/
+
+# CDK
+cdk.out/
+.cdk.staging/

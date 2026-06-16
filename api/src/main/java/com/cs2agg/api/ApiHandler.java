@@ -8,13 +8,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGatewayV2HTTPResponse> {
     private final MatchService matchService;
+    private final BracketService bracketService;
     private final ObjectMapper mapper;
 
     public ApiHandler() {
         this.matchService = new MatchService();
+        this.bracketService = new BracketService(new DynamoDbReader());
         this.mapper = new ObjectMapper();
     }
 
@@ -25,6 +28,9 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
 
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
+        headers.put("Access-Control-Allow-Origin", "*");
+        headers.put("Access-Control-Allow-Methods", "GET,OPTIONS");
+        headers.put("Access-Control-Allow-Headers", "Content-Type");
 
         try {
             if (routeKey == null) {
@@ -61,6 +67,19 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
                 var matches = matchService.getMatchesByTeam(id);
                 return buildResponse(200, mapper.writeValueAsString(matches), headers);
                 
+            } else if (routeKey.equals("GET /tournaments/{id}/bracket")) {
+                Map<String, String> pathParams = event.getPathParameters();
+                String id = (pathParams != null) ? pathParams.get("id") : null;
+                if (id == null || id.trim().isEmpty()) {
+                    return buildResponse(400, "{\"message\":\"Missing path parameter 'id'\"}", headers);
+                }
+                Optional<com.cs2agg.api.model.BracketResponse> bracketOpt = bracketService.getBracketByTournament(id);
+                if (bracketOpt.isPresent()) {
+                    return buildResponse(200, mapper.writeValueAsString(bracketOpt.get()), headers);
+                } else {
+                    return buildResponse(404, "{\"message\":\"Bracket not found\"}", headers);
+                }
+
             } else {
                 return buildResponse(404, "{\"message\":\"Route not found\"}", headers);
             }

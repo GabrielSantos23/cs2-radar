@@ -78,7 +78,8 @@ public class MatchService {
                 entity.getSerieName(),
                 team1,
                 team2,
-                odds
+                odds,
+                entity.getPandascoreTournamentId()
         );
     }
 

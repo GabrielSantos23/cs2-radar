@@ -23,6 +23,7 @@ public class InfraApp {
         new ProcessorStack(app, "CS2ProcessorStack", props,
                 storageStack.getVpc(),
                 storageStack.getTable(),
+                storageStack.getBracketsTable(),
                 fetcherStack.getQueue(),
                 storageStack.getRedisHost(),
                 storageStack.getRedisSecurityGroup()
@@ -32,6 +33,7 @@ public class InfraApp {
         new ApiStack(app, "CS2ApiStack", props,
                 storageStack.getVpc(),
                 storageStack.getTable(),
+                storageStack.getBracketsTable(),
                 storageStack.getRedisHost(),
                 storageStack.getRedisSecurityGroup()
         );

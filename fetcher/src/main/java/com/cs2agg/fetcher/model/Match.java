@@ -23,6 +23,7 @@ public record Match(
     @JsonProperty("team1") Team team1,
     @JsonProperty("team2") Team team2,
     @JsonProperty("odds") List<Odds> odds,
+    @JsonProperty("tournament_id") String tournamentId,
     @JsonIgnore String tournamentTier
 ) {
 
@@ -45,6 +46,10 @@ public record Match(
 
             String tournamentName = "";
             String tournamentTier = "";
+            String tournamentId = "";
+            if (node.has("tournament_id") && !node.get("tournament_id").isNull()) {
+                tournamentId = node.get("tournament_id").asText();
+            }
             if (node.has("tournament") && !node.get("tournament").isNull()) {
                 JsonNode tournament = node.get("tournament");
                 if (tournament.has("name") && !tournament.get("name").isNull()) {
@@ -52,6 +57,9 @@ public record Match(
                 }
                 if (tournament.has("tier") && !tournament.get("tier").isNull()) {
                     tournamentTier = tournament.get("tier").asText();
+                }
+                if (tournamentId.isEmpty() && tournament.has("id") && !tournament.get("id").isNull()) {
+                    tournamentId = tournament.get("id").asText();
                 }
             }
             
@@ -94,7 +102,7 @@ public record Match(
                 }
             }
             
-            return new Match(id, name, beginAt, fullChampionshipName, serieName, team1, team2, oddsList, tournamentTier);
+            return new Match(id, name, beginAt, fullChampionshipName, serieName, team1, team2, oddsList, tournamentId, tournamentTier);
         }
         
         private Team parseTeam(JsonNode opponentNode) {
