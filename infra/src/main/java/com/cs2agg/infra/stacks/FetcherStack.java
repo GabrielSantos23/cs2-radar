@@ -29,6 +29,7 @@ public class FetcherStack extends Stack {
 
         Map<String, String> environment = new HashMap<>();
         environment.put("PANDASCORE_API_KEY", "{{resolve:ssm:/cs2agg/pandascore-key}}");
+        environment.put("ODDSPAPI_KEY", "{{resolve:ssm:/cs2agg/oddspapi-key}}");
         environment.put("SQS_QUEUE_URL", queue.getQueueUrl());
 
         this.fetcherLambda = Function.Builder.create(this, "FetcherLambda")
@@ -36,7 +37,7 @@ public class FetcherStack extends Stack {
                 .handler("com.cs2agg.fetcher.FetcherHandler")
                 .code(Code.fromAsset("../fetcher/target/fetcher-1.0.0-SNAPSHOT-shaded.jar"))
                 .memorySize(512)
-                .timeout(Duration.seconds(30))
+                .timeout(Duration.minutes(5))
                 .environment(environment)
                 .build();
 

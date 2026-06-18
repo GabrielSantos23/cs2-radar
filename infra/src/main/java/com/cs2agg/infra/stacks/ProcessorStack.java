@@ -22,6 +22,7 @@ public class ProcessorStack extends Stack {
             final IVpc vpc,
             final Table table,
             final Table bracketsTable,
+            final Table rankingTable,
             final Queue queue,
             final String redisHost,
             final SecurityGroup redisSecurityGroup) {
@@ -57,5 +58,6 @@ public class ProcessorStack extends Stack {
         queue.grantConsumeMessages(taskDefinition.getTaskRole());
         table.grantReadWriteData(taskDefinition.getTaskRole());
         bracketsTable.grantReadWriteData(taskDefinition.getTaskRole());
+        rankingTable.grantReadWriteData(taskDefinition.getTaskRole());
     }
 }

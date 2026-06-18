@@ -24,6 +24,7 @@ public record Match(
     @JsonProperty("team2") Team team2,
     @JsonProperty("odds") List<Odds> odds,
     @JsonProperty("tournament_id") String tournamentId,
+    @JsonProperty("tournament_image_url") String tournamentImageUrl,
     @JsonIgnore String tournamentTier
 ) {
 
@@ -37,11 +38,29 @@ public record Match(
             String beginAt = node.has("begin_at") && !node.get("begin_at").isNull() ? node.get("begin_at").asText() : "";
             
             String leagueName = "";
+            String leagueImageUrl = "";
             if (node.has("league") && !node.get("league").isNull()) {
                 JsonNode league = node.get("league");
                 if (league.has("name") && !league.get("name").isNull()) {
                     leagueName = league.get("name").asText();
                 }
+                if (league.has("image_url") && !league.get("image_url").isNull()) {
+                    leagueImageUrl = league.get("image_url").asText();
+                }
+            }
+
+            String serieName = "";
+            if (node.has("serie") && !node.get("serie").isNull()) {
+                JsonNode serie = node.get("serie");
+                if (serie.has("full_name") && !serie.get("full_name").isNull()) {
+                    serieName = serie.get("full_name").asText();
+                } else if (serie.has("name") && !serie.get("name").isNull()) {
+                    serieName = serie.get("name").asText();
+                }
+            }
+
+            if (leagueName.isEmpty() && !serieName.isEmpty()) {
+                leagueName = serieName;
             }
 
             String tournamentName = "";
@@ -63,22 +82,7 @@ public record Match(
                 }
             }
             
-            String fullChampionshipName = tournamentName;
-            if (!leagueName.isEmpty()) {
-                if (tournamentName.isEmpty()) {
-                    fullChampionshipName = leagueName;
-                } else {
-                    fullChampionshipName = leagueName + " - " + tournamentName;
-                }
-            }
-            
-            String serieName = "";
-            if (node.has("serie") && !node.get("serie").isNull()) {
-                JsonNode serie = node.get("serie");
-                if (serie.has("name") && !serie.get("name").isNull()) {
-                    serieName = serie.get("name").asText();
-                }
-            }
+            String fullChampionshipName = getCleanChampionshipName(leagueName, serieName, tournamentName);
             
             Team team1 = null;
             Team team2 = null;
@@ -102,7 +106,7 @@ public record Match(
                 }
             }
             
-            return new Match(id, name, beginAt, fullChampionshipName, serieName, team1, team2, oddsList, tournamentId, tournamentTier);
+            return new Match(id, name, beginAt, fullChampionshipName, serieName, team1, team2, oddsList, tournamentId, leagueImageUrl, tournamentTier);
         }
         
         private Team parseTeam(JsonNode opponentNode) {
@@ -114,6 +118,68 @@ public record Match(
             String acronym = opponentNode.has("acronym") && !opponentNode.get("acronym").isNull() ? opponentNode.get("acronym").asText() : "";
             String imageUrl = opponentNode.has("image_url") && !opponentNode.get("image_url").isNull() ? opponentNode.get("image_url").asText() : "";
             return new Team(id, name, acronym, imageUrl);
+        }
+
+        private static String getCleanChampionshipName(String leagueName, String serieName, String tournamentName) {
+            String baseName = "";
+            if (leagueName != null && !leagueName.trim().isEmpty()) {
+                baseName = leagueName.trim();
+            } else if (serieName != null && !serieName.trim().isEmpty()) {
+                baseName = serieName.trim();
+            } else if (tournamentName != null && !tournamentName.trim().isEmpty()) {
+                baseName = tournamentName.trim();
+            }
+            
+            if (baseName.isEmpty()) {
+                return "Unknown Championship";
+            }
+            
+            baseName = baseName.split(" - ")[0].trim();
+            String baseNameLower = baseName.toLowerCase();
+            if (baseNameLower.contains("cologne") || 
+                baseNameLower.contains("iem") || 
+                baseNameLower.contains("intel extreme masters")) {
+                baseName = "IEM";
+            }
+            
+            List<String> genericTerms = List.of(
+                "group", "playoff", "decider", "elimination", "winners", "opening", "round", 
+                "finals", "stage", "bracket", "play-in", "qualifier"
+            );
+            
+            String checkLower = baseName.toLowerCase();
+            boolean isGeneric = genericTerms.contains(checkLower) || 
+                                genericTerms.stream().anyMatch(term -> checkLower.startsWith(term));
+                                
+            if (isGeneric) {
+                if (serieName != null && !serieName.trim().isEmpty()) {
+                    String sName = serieName.trim();
+                    String sNameLower = sName.toLowerCase();
+                    boolean isSerieGeneric = genericTerms.contains(sNameLower) || 
+                                             genericTerms.stream().anyMatch(term -> sNameLower.startsWith(term));
+                    if (!isSerieGeneric) {
+                        if (sNameLower.contains("cologne") || 
+                            sNameLower.contains("iem") || 
+                            sNameLower.contains("intel extreme masters")) {
+                            return "IEM";
+                        }
+                        return sName;
+                    }
+                }
+                
+                if (leagueName != null && !leagueName.trim().isEmpty()) {
+                    String lName = leagueName.trim();
+                    String lNameLower = lName.toLowerCase();
+                    if (lNameLower.contains("cologne") || 
+                        lNameLower.contains("iem") || 
+                        lNameLower.contains("intel extreme masters")) {
+                        return "IEM";
+                    }
+                    return lName;
+                }
+                return "Other";
+            }
+            return baseName;
         }
     }
 }

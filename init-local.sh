@@ -19,4 +19,16 @@ aws dynamodb create-table \
   --billing-mode PAY_PER_REQUEST \
   --endpoint-url $ENDPOINT
 
+echo "Creating DynamoDB table: cs2-ranking..."
+aws dynamodb create-table \
+  --table-name cs2-ranking \
+  --attribute-definitions \
+    AttributeName=snapshotDate,AttributeType=S \
+    AttributeName=teamId,AttributeType=S \
+  --key-schema \
+    AttributeName=snapshotDate,KeyType=HASH \
+    AttributeName=teamId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST \
+  --endpoint-url $ENDPOINT
+
 echo "Local resources initialized successfully!"

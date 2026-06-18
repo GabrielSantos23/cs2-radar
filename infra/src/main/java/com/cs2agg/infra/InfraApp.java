@@ -24,6 +24,7 @@ public class InfraApp {
                 storageStack.getVpc(),
                 storageStack.getTable(),
                 storageStack.getBracketsTable(),
+                storageStack.getRankingTable(),
                 fetcherStack.getQueue(),
                 storageStack.getRedisHost(),
                 storageStack.getRedisSecurityGroup()
@@ -34,6 +35,7 @@ public class InfraApp {
                 storageStack.getVpc(),
                 storageStack.getTable(),
                 storageStack.getBracketsTable(),
+                storageStack.getRankingTable(),
                 storageStack.getRedisHost(),
                 storageStack.getRedisSecurityGroup()
         );

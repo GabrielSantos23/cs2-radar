@@ -1,0 +1,260 @@
+---
+title: "Como construí um agregador de partidas de CS2 com Java e AWS"
+date: "2024-03-21"
+tags: ["java", "aws", "cs2", "backend", "cloud"]
+description: "Coleta de partidas, odds ao vivo e ranking derivado de times — tudo em Java rodando na AWS sem servidor pra gerenciar."
+---
+
+import { Callout } from './components/Callout'
+import { ImagePlaceholder } from './components/ImagePlaceholder'
+
+# Como construí um agregador de partidas de CS2 com Java e AWS
+
+Quem acompanha o cenário competitivo de Counter-Strike 2 sabe o quão inconveniente é ter que navegar por múltiplos portais ou casas de aposta só para conferir quando o seu time preferido joga, quais são as cotações atuais e como está a fase de playoffs de um campeonato. Eu queria uma forma limpa, direta e sem poluição visual de acompanhar as partidas mais importantes das divisões Tier S e Tier A sem depender de interfaces lentas. O que começou com um script simples acabou virando um verdadeiro exercício de engenharia de software e arquitetura distribuída na AWS.
+
+---
+
+## O problema com usar a API direto
+
+A primeira ideia quando pensamos em exibir esses dados é fazer o frontend consultar diretamente APIs públicas de esports como a PandaScore. Mas essa abordagem não resiste ao mundo real por vários motivos. Primeiro, por questões de segurança e controle de custos: expor sua chave de API diretamente no cliente web consome toda a sua cota mensal de requests muito antes do planejado, além do perigo de vazamento da credencial. 
+
+Além disso, as respostas de APIs públicas costumam ser imensas e cheias de dados irrelevantes para a nossa visualização, sem contar a ausência de um mecanismo de cache interno, o que nos forçaria a pagar a latência de requisições externas para cada usuário novo. Há também a inconsistência de dados quando precisamos cruzar essas informações com cotações externas de odds. A solução para contornar tudo isso foi construir um backend próprio que serve como uma camada intermediária inteligente de curadoria, cache e normalização de dados.
+
+---
+
+## Visão geral da arquitetura
+
+A arquitetura do projeto foi estruturada sob o princípio da separação rígida entre a entrada de dados (ingestão) e a saída de dados (entrega). O fluxo começa de forma assíncrona: uma rotina automatizada busca dados na API externa, serializa as informações e as deposita em uma fila. 
+
+O processador lê essa fila em segundo plano, estruturando e armazenando os dados finais no banco e no cache de alta velocidade. A API Gateway e a Lambda de consulta agem apenas na leitura desses repositórios, entregando os dados ao frontend com tempo de resposta na casa de milissegundos.
+
+<ImagePlaceholder
+  src="/images/cs2-radar-architecture.png"
+  alt="Diagrama da arquitetura do CS2 Radar"
+  caption="Fluxo completo: PandaScore → Lambda → SQS → Fargate → DynamoDB/Redis → API Gateway"
+/>
+
+Essa separação intencional garante que eventuais quedas ou lentidões na API de dados externa da PandaScore nunca se propaguem para a interface visual do usuário. O usuário final sempre recebe a resposta vinda dos nossos bancos internos sem qualquer atrito.
+
+---
+
+## O fetcher: Lambda sem Spring Boot
+
+Para realizar a coleta das partidas futuras de forma eficiente e sem gerar custos operacionais altos, a Lambda de coleta (fetcher) roda programada via EventBridge a cada 5 minutos. Nesse componente, decidi conscientemente abrir mão do Spring Boot. O motivo principal é o cold start: funções que rodam de forma curta e periódica sofrem muito se precisarem iniciar o ecossistema robusto do Spring todas as vezes. Uma chamada clássica HTTP usando OkHttp combinada com Jackson para parsing do JSON foi mais do que suficiente para despachar o payload em poucos milissegundos.
+
+```java
+// PandaScoreClient.java
+public List<Match> fetchUpcomingMatches() {
+    HttpUrl url = HttpUrl.parse("https://api.pandascore.co/csgo/matches/upcoming")
+        .newBuilder()
+        .addQueryParameter("filter[status]", "not_started")
+        .addQueryParameter("filter[tournament_tier]", "s,a")
+        .addQueryParameter("sort", "begin_at")
+        .addQueryParameter("per_page", "50")
+        .addQueryParameter("token", apiKey)
+        .build();
+
+    // ... implementação
+}
+```
+
+O filtro `filter[tournament_tier]=s,a` é fundamental para filtrar a poluição de torneios menores e focar apenas no circuito profissional principal. Os torneios de Tier S envolvem os campeonatos de maior relevância do ecossistema competitivo de CS2, como os Majors, campeonatos organizados pela IEM (Intel Extreme Masters) e pela BLAST Premier, enquanto o Tier A abrange torneios qualificatórios e competições internacionais de grande expressão.
+
+---
+
+## SQS como buffer entre coleta e processamento
+
+Posicionar uma fila SQS como intermediária entre a Lambda de busca e o nosso motor de processamento resolve um problema comum de acoplamento temporal. Se o processador estivesse offline por manutenção ou sob estresse de rede, a Lambda perderia os dados coletados se tentasse chamá-lo diretamente por HTTP. 
+
+Ao depositar as partidas em uma fila de mensagens, o processamento pode ocorrer no ritmo do processador, de maneira assíncrona. Caso algo falhe temporariamente na persistência ou no banco, o SQS mantém a mensagem segura para novas tentativas, impedindo perdas silenciosas de dados.
+
+<Callout type="info">
+  O visibility timeout da fila está configurado para 60 segundos — tempo suficiente para o processor processar uma mensagem sem que ela reapareça na fila enquanto está sendo trabalhada.
+</Callout>
+
+---
+
+## O processor: o único lugar com Spring Boot
+
+Diferente do fetcher, o processador (processor) é um serviço que roda ininterruptamente como um container no ECS Fargate. Como ele não sofre problemas de cold start e precisa lidar com diversas tarefas integradas de escuta e atualização, o Spring Boot faz todo sentido aqui. Usar a anotação `@SqsListener` do Spring Cloud AWS nos ajuda a configurar o long polling do SQS automaticamente e de forma transparente, reduzindo o boilerplate de infraestrutura na aplicação.
+
+```java
+// SqsConsumer.java
+@SqsListener(value = "${app.sqs.queue-url}")
+public void consume(String message) {
+    MatchEvent event = objectMapper.readValue(message, MatchEvent.class);
+
+    matchRepository.save(event);
+    oddsCache.cacheOdds(event.id(), event.odds());
+}
+```
+
+Se a lógica dentro do consumer falhar (como uma queda temporária na conexão do DynamoDB ou do Redis), a exceção é propagada. Com isso, o Spring Boot recusa o recebimento da mensagem, o visibility timeout expira e a mensagem retorna para a fila original automaticamente para novas tentativas de processamento sem perdas.
+
+---
+
+## DynamoDB: modelagem para queries reais
+
+A escolha do DynamoDB como banco principal se deu pela simplicidade operacional e custo escalável (pay-per-request). Os dados das partidas de CS2 não exigem relacionamentos complexos ou queries que exijam múltiplos JOINs relacionais no nosso modelo de leitura principal. O principal padrão de acesso da nossa API consiste em ler partidas associadas a um determinado ID de torneio, ou trazer uma partida específica pelo seu ID.
+
+Modelamos nossa tabela `cs2-matches` de forma enxuta para favorecer esse acesso rápido:
+
+```java
+// Modelagem da tabela cs2-matches
+// Partition key: tournamentId
+// Sort key: matchId
+// TTL: atributo "ttl" (timestamp Unix)
+```
+
+<ImagePlaceholder
+  src="/images/cs2-radar-dynamodb-model.png"
+  alt="Modelo de dados do DynamoDB"
+  caption="Acesso por tournamentId permite listar todas as partidas de um torneio em uma query"
+/>
+
+O uso do TTL nativo no DynamoDB foi definido mapeando o campo `ttl`. O próprio DynamoDB descarta as partidas com mais de algumas semanas de forma assíncrona, garantindo que o volume de armazenamento não cresça de forma descontrolada no decorrer do ano sem custos adicionais de escrita ou deleção.
+
+---
+
+## Cache de odds com Redis
+
+Enquanto informações estruturais da partida (times, horários) são atualizadas poucas vezes após publicadas, as odds das casas de apostas mudam constantemente a cada variação do mercado. Gravar essas atualizações de odds a cada poucos minutos diretamente no DynamoDB estouraria rapidamente nossa cota de escrita paga. Para resolver isso, direcionamos as odds para uma instância rápida do Redis no ElastiCache, com expiração curta de 2 minutos. A Lambda da API atua sob estratégia cache-first: busca as cotações no Redis de baixíssima latência e devolve as partidas instantaneamente, poupando acessos ao DynamoDB.
+
+```java
+// OddsCache.java
+public void cacheOdds(String matchId, List<Odds> odds) {
+    String key = "odds:" + matchId;
+    String value = objectMapper.writeValueAsString(odds);
+    redisTemplate.opsForValue().set(key, value, Duration.ofMinutes(2));
+}
+```
+
+---
+
+## Cruzando duas APIs: PandaScore + OddsPapi
+
+O calcanhar de Aquiles das integrações de dados esportivos é que diferentes APIs não compartilham os mesmos identificadores de partidas ou de equipes. Para correlacionar uma partida vinda da PandaScore com as odds vindas da API externa OddsPapi, precisei construir um algoritmo de correspondência baseado na normalização dos nomes das equipes (higienizando espaços, removendo caracteres especiais e forçando minúsculas) em conjunto com uma tolerância temporal de no máximo 30 minutos na data/hora prevista de início.
+
+```java
+// OddsPapiClient.java — cruzamento por nome e horário
+private String normalize(String name) {
+    return name.toLowerCase().replaceAll("[^a-z0-9]", "");
+}
+
+private boolean timeMatch(String commence, String beginAt) {
+    long diff = Math.abs(parseEpoch(commence) - parseEpoch(beginAt));
+    return diff < 30 * 60; // 30 minutos em segundos
+}
+```
+
+<Callout type="warning">
+  O plano gratuito da OddsPapi permite 250 requests por mês. Por isso a coleta de odds acontece apenas 4 vezes por dia — nas horas 0, 6, 12 e 18 UTC — resultando em ~120 requests mensais.
+</Callout>
+
+---
+
+## Placar ao vivo
+
+Partidas em andamento (`running`) precisam de uma dinâmica de atualização distinta de partidas agendadas. Fazer requisições constantes a cada segundo para uma API externa não é viável por conta de limites de cobrança. Por conta disso, adotamos uma estratégia mais econômica: o fetcher verifica o endpoint `/csgo/matches/running` da PandaScore apenas a cada 5 minutos para monitorar partidas ativas. 
+
+O cliente web faz o polling rápido a cada 30 segundos no nosso endpoint local `/matches/{id}/live` para obter a atualização de rounds e pontuações em tempo real. Optei por não usar WebSockets porque o custo e a complexidade de implementação de WebSockets em infraestrutura serverless na AWS superavam as vantagens práticas para o nosso caso de uso.
+
+<ImagePlaceholder
+  src="/images/cs2-radar-live-score.png"
+  alt="Screenshot do placar ao vivo"
+  caption="Badge pulsante e placar de rounds atualizado automaticamente"
+/>
+
+```javascript
+// Frontend — polling ao vivo
+function startLivePolling(matchId) {
+  liveInterval = setInterval(async () => {
+    const res = await fetch(`${API_BASE}/matches/${matchId}/live`);
+    if (res.status === 404) {
+      stopLivePolling();
+      return;
+    }
+    updateLiveScore(await res.json());
+  }, 30000);
+}
+```
+
+---
+
+## Ranking derivado: quando a API não tem o que você precisa
+
+A API da PandaScore nos provê os dados brutos de resultados de campeonatos, mas não nos dá um ranking calculado de performance das organizações. Para dar relevância e utilidade ao CS2 Radar, passamos a computar nosso próprio ranking dinâmico de equipes baseando-se nos resultados históricos acumulados dos últimos 6 meses. O motor de cálculo atribui pesos baseados nas posições alcançadas nos campeonatos recentes, aplica um multiplicador pelo peso do torneio (2.0x para Tier S, 1.0x para Tier A) e reduz linearmente os pontos de títulos antigos de forma a favorecer o momento atual dos times.
+
+```java
+// RankingCalculator.java
+public double calculatePoints(int position, String tier, String tournamentEndAt) {
+    double base = switch (position) {
+        case 1 -> 100.0;
+        case 2 -> 70.0;
+        case 3, 4 -> 45.0;
+        case 5, 6, 7, 8 -> 25.0;
+        default -> 10.0;
+    };
+
+    double tierMultiplier = tier.equals("s") ? 2.0 : 1.0;
+
+    long daysSince = ChronoUnit.DAYS.between(
+        LocalDate.parse(tournamentEndAt.substring(0, 10)),
+        LocalDate.now()
+    );
+    double decay = 1.0 - (daysSince / 180.0);
+
+    return base * tierMultiplier * Math.max(decay, 0);
+}
+```
+
+Após processar o ranking global, a variação semanal de posições é obtida gerando um snapshot do estado da classificação a cada 7 dias e persistindo essa lista histórica em uma tabela separada do DynamoDB. Ao carregar a página de classificação, o frontend compara a posição atual do time com a posição capturada no último snapshot e ilustra visualmente a ascensão ou queda da equipe na tabela.
+
+---
+
+## Bracket de torneio
+
+Torneios de fase eliminatória exigem um bracket gráfico legível para mostrar quem enfrenta quem nas etapas finais. Consultamos o endpoint `/csgo/tournaments/{id}/brackets` e modelamos a árvore de playoffs no DynamoDB com a chave de ordenação composta sob o padrão `roundNumber#matchIndex`. No front, preferi não arrastar dependências pesadas de bibliotecas de diagramação ou canvas. Em vez disso, montei uma estrutura CSS Flexbox simples combinada a linhas desenhadas via SVG nativo ligando os blocos de partidas, mantendo a responsividade do layout e a leveza do carregamento.
+
+<ImagePlaceholder
+  src="/images/cs2-radar-bracket.png"
+  alt="Bracket visual de torneio"
+  caption="Playoff bracket renderizado com HTML e SVG puro, sem bibliotecas"
+/>
+
+---
+
+## Infraestrutura como código em Java
+
+Provisionar tudo na nuvem sem perder o rastreamento das alterações seria um problema, então centralizei toda a nossa infraestrutura usando AWS CDK. Diferente do padrão TypeScript comumente visto em artigos de CDK, escrevi as stacks de infraestrutura usando Java puro. Isso permite manter a consistência de ecossistema com o restante do projeto, compartilhar classes comuns e revisar tanto as modificações lógicas de código quanto as alterações de infraestrutura na mesma etapa de code review do repositório. O ciclo de vida do provisionamento foi decomposto em quatro stacks limpas:
+
+```java
+// InfraApp.java
+App app = new App();
+StorageStack storage = new StorageStack(app, "Cs2AggStorage", props);
+FetcherStack fetcher = new FetcherStack(app, "Cs2AggFetcher", storage, props);
+new ProcessorStack(app, "Cs2AggProcessor", storage, fetcher, props);
+new ApiStack(app, "Cs2AggApi", storage, props);
+app.synth();
+```
+
+---
+
+## O que eu faria diferente
+
+Projetar software real consiste em fazer escolhas constantes entre tempo de entrega, custo operacional e fidelidade técnica. Se eu pudesse revisitar e evoluir o sistema hoje com mais recursos, ajustaria pontos específicos:
+
+1. **Associação de times frágil**: A normalização heurística que remove caracteres especiais e espaços funciona na maior parte dos casos, mas falha quando equipes incluem marcas de patrocinadores nos nomes de exibição de uma plataforma ou alteram sua grafia oficial. Uma melhoria seria implementar um sistema fonético/similaridade Jaro-Winkler ou uma tabela interna de aliases de correspondência.
+2. **Tempo real limitado**: Fazer o cliente rodar polling periódico HTTP a cada 30 segundos no placar ativo resolve bem o limite de chamadas externas, mas não entrega a empolgação instantânea de ver os rounds sendo computados ao vivo como nas páginas de apostas tradicionais. Integrar WebSockets nativos no API Gateway elevaria a experiência a um custo operacional maior.
+3. **Restrição das odds**: O teto rígido do plano gratuito da OddsPapi de apenas 250 chamadas por mês força a atualização das cotações a ocorrer apenas quatro vezes ao dia. Isso resulta em cotações desatualizadas ou inexistentes no momento inicial de algumas partidas. Seria necessária uma assinatura paga ou o uso de outra API de cotações de odds.
+4. **Simplificação de rankings**: O motor de ranking atual se baseia exclusivamente nas posições finais em torneios dos últimos seis meses. Ele não avalia a qualidade interna dos confrontos, vitória em mapas específicos ou derrotas contra oponentes mais difíceis (diferente de modelos mais detalhados baseados em algoritmos Elo/Glicko).
+
+---
+
+## Conclusão
+
+Projetar o CS2 Radar serviu como um excelente aprendizado prático no desenho de pipelines assíncronos desacoplados em nuvem sem ter servidores dedicados ativos o dia inteiro. A combinação de processamento orientado a filas SQS, cache Redis temporário de leitura e persistência em DynamoDB nos permitiu sustentar um volume constante de monitoramento de campeonatos de forma econômica.
+
+Além da parte estritamente técnica, a real motivação do projeto foi fugir de sistemas de controle tradicionais (CRUDs) e construir algo com uso real e contendo elementos desafiadores, desde o cálculo de decaimento temporal para o ranking próprio até a modelagem geométrica de brackets eliminatórios de forma otimizada.
+
+O repositório completo e o código do backend e infraestrutura estão disponíveis para consulta no meu [GitHub](https://github.com/GabrielSantos23/cs2-radar).

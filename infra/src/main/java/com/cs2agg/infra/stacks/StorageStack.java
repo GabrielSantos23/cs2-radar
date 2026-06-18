@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 public class StorageStack extends Stack {
     private final Table table;
     private final Table bracketsTable;
+    private final Table rankingTable;
     private final IVpc vpc;
     private final String redisHost;
     private final SecurityGroup redisSecurityGroup;
@@ -40,6 +41,15 @@ public class StorageStack extends Stack {
                 .partitionKey(Attribute.builder().name("tournamentId").type(AttributeType.STRING).build())
                 .sortKey(Attribute.builder().name("roundKey").type(AttributeType.STRING).build())
                 .billingMode(BillingMode.PAY_PER_REQUEST)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
+
+        this.rankingTable = Table.Builder.create(this, "RankingTable")
+                .tableName("cs2-ranking")
+                .partitionKey(Attribute.builder().name("snapshotDate").type(AttributeType.STRING).build())
+                .sortKey(Attribute.builder().name("teamId").type(AttributeType.STRING).build())
+                .billingMode(BillingMode.PAY_PER_REQUEST)
+                .timeToLiveAttribute("ttl")
                 .removalPolicy(RemovalPolicy.DESTROY)
                 .build();
 
@@ -100,6 +110,10 @@ public class StorageStack extends Stack {
 
     public Table getBracketsTable() {
         return bracketsTable;
+    }
+
+    public Table getRankingTable() {
+        return rankingTable;
     }
 
     public IVpc getVpc() {

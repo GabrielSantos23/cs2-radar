@@ -11,5 +11,6 @@ public record MatchResponse(
     TeamResponse team1,
     TeamResponse team2,
     List<OddsResponse> odds,
-    String tournamentId
+    String tournamentId,
+    String tournamentImageUrl
 ) {}

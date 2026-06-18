@@ -2,6 +2,7 @@ package com.cs2agg.api;
 
 import com.cs2agg.api.model.MatchEntity;
 import com.cs2agg.api.model.BracketEntity;
+import com.cs2agg.api.model.RankingEntity;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
 public class DynamoDbReader {
     private final DynamoDbTable<MatchEntity> table;
     private final DynamoDbTable<BracketEntity> bracketsTable;
+    private final DynamoDbTable<RankingEntity> rankingTable;
 
     public DynamoDbReader() {
         String regionStr = System.getenv("AWS_REGION");
@@ -39,6 +41,7 @@ public class DynamoDbReader {
         
         this.table = enhancedClient.table(tableName, TableSchema.fromBean(MatchEntity.class));
         this.bracketsTable = enhancedClient.table("cs2-brackets", TableSchema.fromBean(BracketEntity.class));
+        this.rankingTable = enhancedClient.table("cs2-ranking", TableSchema.fromBean(RankingEntity.class));
     }
 
     public List<MatchEntity> getUpcomingMatches() {
@@ -50,6 +53,7 @@ public class DynamoDbReader {
                 .filter(m -> matchId.equals(m.getMatchId()))
                 .findFirst();
     }
+
 
     public List<String> getTournaments() {
         return table.scan().items().stream()
@@ -69,5 +73,28 @@ public class DynamoDbReader {
         return bracketsTable.query(QueryConditional.keyEqualTo(
                 k -> k.partitionValue(tournamentId)
         )).items().stream().collect(Collectors.toList());
+    }
+
+    public List<RankingEntity> getRankingSnapshot(String date) {
+        try {
+            return rankingTable.query(QueryConditional.keyEqualTo(
+                    k -> k.partitionValue(date)
+            )).items().stream().collect(Collectors.toList());
+        } catch (Exception e) {
+            System.err.println("Failed to query ranking snapshot for date " + date + ": " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    public Optional<List<RankingEntity>> getLatestRanking() {
+        java.time.LocalDate date = java.time.LocalDate.now();
+        for (int i = 0; i < 7; i++) {
+            String dateStr = date.minusDays(i).toString();
+            List<RankingEntity> ranking = getRankingSnapshot(dateStr);
+            if (ranking != null && !ranking.isEmpty()) {
+                return Optional.of(ranking);
+            }
+        }
+        return Optional.empty();
     }
 }

@@ -4,20 +4,27 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPResponse;
+import com.cs2agg.api.model.RankingResponse;
+import com.cs2agg.api.model.TeamRankResponseEntry;
+import com.cs2agg.api.model.RankingEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
+import java.util.ArrayList;
 
 public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGatewayV2HTTPResponse> {
     private final MatchService matchService;
     private final BracketService bracketService;
+    private final DynamoDbReader dbReader;
     private final ObjectMapper mapper;
 
     public ApiHandler() {
+        this.dbReader = new DynamoDbReader();
         this.matchService = new MatchService();
-        this.bracketService = new BracketService(new DynamoDbReader());
+        this.bracketService = new BracketService(dbReader);
         this.mapper = new ObjectMapper();
     }
 
@@ -78,6 +85,36 @@ public class ApiHandler implements RequestHandler<APIGatewayV2HTTPEvent, APIGate
                     return buildResponse(200, mapper.writeValueAsString(bracketOpt.get()), headers);
                 } else {
                     return buildResponse(404, "{\"message\":\"Bracket not found\"}", headers);
+                }
+
+            } else if (routeKey.equals("GET /ranking")) {
+                Optional<List<RankingEntity>> latestOpt = dbReader.getLatestRanking();
+                if (latestOpt.isPresent() && !latestOpt.get().isEmpty()) {
+                    List<RankingEntity> entities = latestOpt.get();
+                    String generatedAt = entities.get(0).getSnapshotDate();
+                    
+                    List<TeamRankResponseEntry> responseEntries = new ArrayList<>();
+                    for (RankingEntity entity : entities) {
+                        int pos = entity.getPosition() != null ? entity.getPosition() : 0;
+                        int prevPos = entity.getPreviousPosition() != null ? entity.getPreviousPosition() : 0;
+                        int change = prevPos == 0 ? 0 : prevPos - pos;
+                        
+                        responseEntries.add(new TeamRankResponseEntry(
+                            pos,
+                            prevPos,
+                            change,
+                            entity.getTeamId(),
+                            entity.getTeamName(),
+                            entity.getImageUrl(),
+                            entity.getScore() != null ? entity.getScore() : 0.0
+                        ));
+                    }
+                    responseEntries.sort(java.util.Comparator.comparingInt(TeamRankResponseEntry::position));
+                    
+                    RankingResponse response = new RankingResponse(generatedAt, responseEntries);
+                    return buildResponse(200, mapper.writeValueAsString(response), headers);
+                } else {
+                    return buildResponse(404, "{\"message\":\"No ranking snapshot found\"}", headers);
                 }
 
             } else {

@@ -12,5 +12,6 @@ public record MatchEvent(
     @JsonProperty("team1") Team team1,
     @JsonProperty("team2") Team team2,
     @JsonProperty("odds") List<Odds> odds,
-    @JsonProperty("tournament_id") String tournamentId
+    @JsonProperty("tournament_id") String tournamentId,
+    @JsonProperty("tournament_image_url") String tournamentImageUrl
 ) {}

@@ -79,7 +79,8 @@ public class MatchService {
                 team1,
                 team2,
                 odds,
-                entity.getPandascoreTournamentId()
+                entity.getPandascoreTournamentId(),
+                entity.getTournamentImageUrl()
         );
     }
 

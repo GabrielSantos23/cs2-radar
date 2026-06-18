@@ -18,6 +18,7 @@ public class MatchEntity {
     private List<OddsEntity> odds;
     private Long ttl;
     private String pandascoreTournamentId;
+    private String tournamentImageUrl;
 
     public MatchEntity() {}
 
@@ -52,4 +53,7 @@ public class MatchEntity {
 
     public String getPandascoreTournamentId() { return pandascoreTournamentId; }
     public void setPandascoreTournamentId(String pandascoreTournamentId) { this.pandascoreTournamentId = pandascoreTournamentId; }
+
+    public String getTournamentImageUrl() { return tournamentImageUrl; }
+    public void setTournamentImageUrl(String tournamentImageUrl) { this.tournamentImageUrl = tournamentImageUrl; }
 }

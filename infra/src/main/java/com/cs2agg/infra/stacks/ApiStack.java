@@ -37,6 +37,7 @@ public class ApiStack extends Stack {
             final IVpc vpc,
             final Table table,
             final Table bracketsTable,
+            final Table rankingTable,
             final String redisHost,
             final SecurityGroup redisSecurityGroup) {
         super(scope, id, props);
@@ -65,6 +66,7 @@ public class ApiStack extends Stack {
 
         table.grantReadData(apiLambda);
         bracketsTable.grantReadData(apiLambda);
+        rankingTable.grantReadData(apiLambda);
         
         apiLambda.grantInvoke(new ServicePrincipal("apigateway.amazonaws.com"));
 
@@ -94,7 +96,7 @@ public class ApiStack extends Stack {
                 .methods(List.of(HttpMethod.GET))
                 .integration(integration)
                 .build());
-
+ 
         httpApi.addRoutes(AddRoutesOptions.builder()
                 .path("/tournaments")
                 .methods(List.of(HttpMethod.GET))
@@ -109,6 +111,12 @@ public class ApiStack extends Stack {
 
         httpApi.addRoutes(AddRoutesOptions.builder()
                 .path("/tournaments/{id}/bracket")
+                .methods(List.of(HttpMethod.GET))
+                .integration(integration)
+                .build());
+
+        httpApi.addRoutes(AddRoutesOptions.builder()
+                .path("/ranking")
                 .methods(List.of(HttpMethod.GET))
                 .integration(integration)
                 .build());
